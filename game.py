@@ -4,6 +4,7 @@ import sys
 import time
 import os
 import json
+import subprocess
 
 # Пути к иконкам
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "icons")
@@ -34,6 +35,8 @@ TOPBAR_BG = (230, 230, 230)
 COORDS_COLOR = (255, 255, 255)
 COORDS_BG = (0, 0, 0, 180)
 MENU_OVERLAY_ALPHA = 0 # Затемнение заднего фона меню
+
+SAVES_DIR = "saves"
 
 # Культура: морковь
 class Carrot:
@@ -316,9 +319,18 @@ def draw_menu_button(surface):
         pygame.draw.rect(surface, (80, 80, 80), (24, y, 28, 4), border_radius=2)
     return btn_rect
 
-PLAYER_SAVE_FILE = "save_player.json"
-FIELD_SAVE_FILE = "save_field.json"
-ENCRYPTED_SAVE_FILE = "save_encrypted.dat"
+def get_save_path(filename):
+    if len(sys.argv) > 1:
+        save_dir = sys.argv[1]
+    else:
+        save_dir = os.path.join("saves", "save_1")
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    return os.path.join(save_dir, filename)
+
+PLAYER_SAVE_FILE = get_save_path("save_player.json")
+FIELD_SAVE_FILE = get_save_path("save_field.json")
+ENCRYPTED_SAVE_FILE = get_save_path("save_encrypted.dat")
 ENCRYPTION_KEY = "my_secret_key_123"  # Можно сделать любой
 
 def save_player(money, harvest):
@@ -437,8 +449,108 @@ def load_encrypted():
         return None
     return data
 
+def get_next_save_folder():
+    if not os.path.exists(SAVES_DIR):
+        os.makedirs(SAVES_DIR)
+    existing = [d for d in os.listdir(SAVES_DIR) if d.startswith("save_") and os.path.isdir(os.path.join(SAVES_DIR, d))]
+    nums = [int(d.split("_")[1]) for d in existing if d.split("_")[1].isdigit()]
+    next_num = max(nums, default=0) + 1
+    return os.path.join(SAVES_DIR, f"save_{next_num}")
+
+def get_all_saves():
+    if not os.path.exists(SAVES_DIR):
+        return []
+    saves = [d for d in os.listdir(SAVES_DIR) if d.startswith("save_") and os.path.isdir(os.path.join(SAVES_DIR, d))]
+    saves.sort(key=lambda x: int(x.split("_")[1]))
+    return saves
+
+def show_main_menu():
+    pygame.init()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Farming - Меню")
+    font = pygame.font.Font(None, 60)
+    clock = pygame.time.Clock()
+    show_saves = False
+    saves = get_all_saves()
+    selected_save = 0
+
+    while True:
+        screen.fill((34, 139, 34))
+        title = font.render("Farming", True, (255, 255, 255))
+        new_btn = font.render("Новая игра", True, (0, 0, 0))
+        cont_btn = font.render("Продолжить", True, (0, 0, 0))
+        exit_btn = font.render("Выйти", True, (0, 0, 0))
+
+        title_rect = title.get_rect(center=(SCREEN_WIDTH//2, 180))
+        new_rect = new_btn.get_rect(center=(SCREEN_WIDTH//2, 320))
+        cont_rect = cont_btn.get_rect(center=(SCREEN_WIDTH//2, 400))
+        exit_rect = exit_btn.get_rect(center=(SCREEN_WIDTH//2, 480))
+
+        pygame.draw.rect(screen, (230, 230, 230), new_rect.inflate(40, 20), border_radius=12)
+        pygame.draw.rect(screen, (230, 230, 230), cont_rect.inflate(40, 20), border_radius=12)
+        pygame.draw.rect(screen, (230, 230, 230), exit_rect.inflate(40, 20), border_radius=12)
+        screen.blit(title, title_rect)
+        screen.blit(new_btn, new_rect)
+        screen.blit(cont_btn, cont_rect)
+        screen.blit(exit_btn, exit_rect)
+
+        if show_saves:
+            saves = get_all_saves()
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            screen.blit(overlay, (0, 0))
+            saves_font = pygame.font.Font(None, 48)
+            y = 220
+            for i, save in enumerate(saves):
+                color = (255, 255, 0) if i == selected_save else (255, 255, 255)
+                text = saves_font.render(save, True, color)
+                rect = text.get_rect(center=(SCREEN_WIDTH//2, y))
+                screen.blit(text, rect)
+                y += 60
+            info = saves_font.render("Enter - выбрать, Esc - назад", True, (200, 200, 200))
+            screen.blit(info, info.get_rect(center=(SCREEN_WIDTH//2, y+30)))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if show_saves:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        show_saves = False
+                    elif event.key == pygame.K_UP:
+                        selected_save = (selected_save - 1) % len(saves) if saves else 0
+                    elif event.key == pygame.K_DOWN:
+                        selected_save = (selected_save + 1) % len(saves) if saves else 0
+                    elif event.key == pygame.K_RETURN and saves:
+                        pygame.quit()
+                        return os.path.join(SAVES_DIR, saves[selected_save])
+            else:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mx, my = event.pos
+                    if new_rect.collidepoint(mx, my):
+                        save_folder = get_next_save_folder()
+                        os.makedirs(save_folder, exist_ok=True)
+                        pygame.quit()
+                        return save_folder
+                    elif cont_rect.collidepoint(mx, my):
+                        show_saves = True
+                        selected_save = 0
+                    elif exit_rect.collidepoint(mx, my):
+                        pygame.quit()
+                        sys.exit()
+
+        pygame.display.flip()
+        clock.tick(60)
+
 def main():
     global selected_crop_idx, SCREEN_WIDTH, SCREEN_HEIGHT, field
+    # --- добавьте это в начало main() ---
+    global PLAYER_SAVE_FILE, FIELD_SAVE_FILE, ENCRYPTED_SAVE_FILE
+    PLAYER_SAVE_FILE = get_save_path("save_player.json")
+    FIELD_SAVE_FILE = get_save_path("save_field.json")
+    ENCRYPTED_SAVE_FILE = get_save_path("save_encrypted.dat")
+    # ------------------------------------
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Farmer in Field")
@@ -589,8 +701,8 @@ def main():
                     if btn1.collidepoint(mx, my) or burger.collidepoint(mx, my):
                         menu_open = False
                     elif btn2.collidepoint(mx, my):
-                        pygame.quit()
-                        sys.exit()
+                        # Вместо выхода из игры — возвращаемся в главное меню
+                        return
                     elif btn3.collidepoint(mx, my):
                         menu_open = False
                         shop_open = True
@@ -627,5 +739,11 @@ def main():
         pygame.display.flip()
         clock.tick(60)
 
+    pygame.quit()
+    return  # Не sys.exit()
+
 if __name__ == "__main__":
-    main()
+    while True:
+        save_dir = show_main_menu()
+        sys.argv = [sys.argv[0], save_dir]
+        main()
