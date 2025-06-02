@@ -10,13 +10,15 @@ import subprocess
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "icons")
 MONEY_ICON = os.path.join(ICONS_DIR, "monay.png")
 HARVEST_ICON = os.path.join(ICONS_DIR, "harvest.png")
+BED_IMG = os.path.join(ICONS_DIR, "bed.png")  # путь к картинке грядки
+CARROT_IMG = os.path.join(ICONS_DIR, "bed_carrot.png")  # путь к картинке моркови
 
 # Настройки
 SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
-SQUARE_SIZE = 30
-GAP = 30
-BG_COLOR = (34, 139, 34)
-SQUARE_COLOR = (222, 184, 135)
+SQUARE_SIZE = 80
+GAP = 84
+BG_COLOR = (239, 222, 100)
+SQUARE_COLOR = (255, 245, 179)
 
 CARROT_COLOR = (255, 140, 0)
 CARROT_READY_COLOR = (200, 100, 0)
@@ -87,8 +89,7 @@ def get_square_by_pos(mx, my, offset_x, offset_y):
     row = ((my - TOPBAR_HEIGHT) + offset_y) // GAP
     return col, row
 
-def draw_grid(surface, offset_x, offset_y, now, hover_pos=None, selected_crop=None):
-    # Добавляем запас по 2 клетки с каждой стороны
+def draw_grid(surface, offset_x, offset_y, now, hover_pos=None, selected_crop=None, bed_img=None, carrot_img=None):
     cols = SCREEN_WIDTH // GAP + 6
     rows = (SCREEN_HEIGHT - TOPBAR_HEIGHT) // GAP + 6
     for col in range(cols):
@@ -97,6 +98,14 @@ def draw_grid(surface, offset_x, offset_y, now, hover_pos=None, selected_crop=No
             y = row * GAP - offset_y % GAP + TOPBAR_HEIGHT - 2 * GAP
             grid_pos = ((col + offset_x // GAP - 2), (row + offset_y // GAP - 2))
             rect = (x, y, SQUARE_SIZE, SQUARE_SIZE)
+            # Сначала рисуем фон клетки
+            pygame.draw.rect(surface, SQUARE_COLOR, rect)
+            # Потом картинку грядки с отступом (например, 6 пикселей)
+            if bed_img:
+                margin = 6
+                bed_rect = pygame.Rect(x + margin, y + margin, SQUARE_SIZE - 2*margin, SQUARE_SIZE - 2*margin)
+                bed_scaled = pygame.transform.smoothscale(bed_img, (SQUARE_SIZE - 2*margin, SQUARE_SIZE - 2*margin))
+                surface.blit(bed_scaled, bed_rect)
             # Подсветка по наведению
             if hover_pos and grid_pos == hover_pos and selected_crop:
                 base_color = selected_crop.plant_color
@@ -111,9 +120,12 @@ def draw_grid(surface, offset_x, offset_y, now, hover_pos=None, selected_crop=No
                     crop_info["state"] = "ready"
                     state = "ready"
                 pygame.draw.rect(surface, crop.get_color(state), rect)
-            else:
-                pygame.draw.rect(surface, SQUARE_COLOR, rect)
-            pygame.draw.rect(surface, (100, 70, 40), rect, 2)
+                # --- Картинка моркови ---
+                if crop.name == "Морковь" and carrot_img:
+                    carrot_rect = carrot_img.get_rect(center=(x + SQUARE_SIZE // 2, y + SQUARE_SIZE // 2))
+                    surface.blit(carrot_img, carrot_rect)
+            # Рамка
+            # pygame.draw.rect(surface, (100, 70, 40), rect, 2)
 
 def draw_topbar(surface, font, selected_crop):
     # Создаем поверхность с поддержкой прозрачности
@@ -475,7 +487,7 @@ def show_main_menu():
     selected_save = 0
 
     while True:
-        screen.fill((34, 139, 34))
+        screen.fill((40, 0, 50))
         title = font.render("Farming", True, (255, 255, 255))
         new_btn = font.render("Новая игра", True, (0, 0, 0))
         cont_btn = font.render("Продолжить", True, (0, 0, 0))
@@ -545,12 +557,10 @@ def show_main_menu():
 
 def main():
     global selected_crop_idx, SCREEN_WIDTH, SCREEN_HEIGHT, field
-    # --- добавьте это в начало main() ---
     global PLAYER_SAVE_FILE, FIELD_SAVE_FILE, ENCRYPTED_SAVE_FILE
     PLAYER_SAVE_FILE = get_save_path("save_player.json")
     FIELD_SAVE_FILE = get_save_path("save_field.json")
     ENCRYPTED_SAVE_FILE = get_save_path("save_encrypted.dat")
-    # ------------------------------------
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Farmer in Field")
@@ -566,6 +576,22 @@ def main():
             print("Ошибка: Не удалось загрузить шрифт")
             pygame.quit()
             sys.exit()
+
+    # --- Загрузка картинки грядки ---
+    try:
+        bed_img = pygame.image.load(BED_IMG).convert_alpha()
+        bed_img = pygame.transform.smoothscale(bed_img, (SQUARE_SIZE, SQUARE_SIZE))
+    except Exception:
+        bed_img = None
+        print("Не удалось загрузить картинку грядки (bed.png)")
+
+    # --- Загрузка картинки моркови ---
+    try:
+        carrot_img = pygame.image.load(CARROT_IMG).convert_alpha()
+        carrot_img = pygame.transform.smoothscale(carrot_img, (SQUARE_SIZE - 16, SQUARE_SIZE - 16))
+    except Exception:
+        carrot_img = None
+        print("Не удалось загрузить картинку моркови (carrot.png)")
 
     # Загрузка двух частей
     money, harvest = load_player()
@@ -606,7 +632,7 @@ def main():
         menu_btn_rect = None
         if not menu_open and not shop_open:
             screen.fill(BG_COLOR)
-            draw_grid(screen, offset_x, offset_y, now, hover_pos, CROPS[selected_crop_idx])
+            draw_grid(screen, offset_x, offset_y, now, hover_pos, CROPS[selected_crop_idx], bed_img, carrot_img)
             draw_topbar(screen, font, CROPS[selected_crop_idx])
             draw_stats(screen, font, money, harvest)
             menu_btn_rect = draw_menu_button(screen)
